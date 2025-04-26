@@ -1,0 +1,116 @@
+version: '3.8'
+
+services:
+  postgres-ms:
+    container_name: postgres-ms
+    image: postgres:latest
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: mDIDkafaVvuPapcbOhxwaxNyskfqQjrA
+      POSTGRES_DB: railway
+      POSTGRES_HOST_AUTH_METHOD: md5
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - microservices-network
+    restart: always
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    container_name: redis
+    image: redis:latest
+    environment:
+      REDIS_PASSWORD: cCWOUBgeuoTyUnePlWRHSgeefwvyljbV
+    ports:
+      - "6379:6379"
+    networks:
+      - microservices-network
+    restart: always
+
+  servicereg:
+    container_name: servicereg
+    image: sujaysharvesh/servicereg:latest
+    ports:
+      - "8761:8761"
+    depends_on:
+      - redis
+      - postgres-ms
+    networks:
+      - microservices-network
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-ms:5432/railway
+      SPRING_DATASOURCE_USERNAME: postgres  # Changed from railway to postgres
+      SPRING_DATASOURCE_PASSWORD: mDIDkafaVvuPapcbOhxwaxNyskfqQjrA
+      SPRING_REDIS_HOST: redis
+      SPRING_REDIS_PASSWORD: cCWOUBgeuoTyUnePlWRHSgeefwvyljbV
+
+  gateway-ms:
+    container_name: gateway-ms
+    image: sujaysharvesh/gateway-ms:latest
+    ports:
+      - "8085:8085"
+    depends_on:
+      - servicereg
+    networks:
+      - microservices-network
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SPRING_CLOUD_CONFIG_URI: http://servicereg:8761
+      SPRING_REDIS_HOST: redis
+      SPRING_REDIS_PASSWORD: cCWOUBgeuoTyUnePlWRHSgeefwvyljbV
+
+  user:
+    container_name: user
+    image: sujaysharvesh/userservice:latest
+    ports:
+      - "8081:8081"
+    depends_on:
+      - postgres-ms
+      - servicereg
+    networks:
+      - microservices-network
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-ms:5432/railway
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: mDIDkafaVvuPapcbOhxwaxNyskfqQjrA
+      SPRING_REDIS_HOST: redis
+      SPRING_REDIS_PASSWORD: cCWOUBgeuoTyUnePlWRHSgeefwvyljbV  # Fixed password consistency
+
+  music:
+    container_name: music
+    image: sujaysharvesh/musicservice:latest
+    ports:
+      - "8082:8082"
+    depends_on:
+      postgres-ms:
+        condition: service_healthy
+      servicereg:
+        condition: service_started
+    networks:
+      - microservices-network
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      # Force these values to override any configuration
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-ms:5432/railway
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: mDIDkafaVvuPapcbOhxwaxNyskfqQjrA
+      # Add debug logging
+      LOGGING_LEVEL_ROOT: DEBUG
+      LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_BOOT: DEBUG
+      LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_JDBC: TRACE
+      LOGGING_LEVEL_COM_ZAXXER_HIKARI: DEBUG
+
+
+networks:
+  microservices-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
